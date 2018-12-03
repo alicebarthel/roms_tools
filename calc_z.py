@@ -1,7 +1,9 @@
 from numpy import *
 
 # Given ROMS grid variables, calculate s-coordinates, stretching curves, and
-# z-coordinates. Assumes Vtransform = 2.
+# z-coordinates. 
+# [Dec 3 2018; A. Barthel] Modified to include Vtransform=1 and Vstretching=1 options
+# Default remains  Vtransform = 2 and Vstretching=4.
 
 # Input (all straight out of grid file and *.in file):
 # h, zice = 2D arrays containing values for bathymetry and ice shelf draft.
@@ -14,7 +16,7 @@ from numpy import *
 #     grid; dimension depth x latitude x longitude
 # s = 1D array of s-coordinate values
 # C = 1D array of stretching curve values
-def calc_z (h, zice, theta_s, theta_b, hc, N, zeta=None, Vstretching=4):
+def calc_z (h, zice, theta_s, theta_b, hc, N, zeta=None, Vstretching=4, Vtransform=2):
 
     # Follows the method of scoord_zice.m and stretching.m on katabatic
     # (in /ds/projects/iomp/matlab_scripts/ROMS_NetCDF/iomp_IAF/)
@@ -27,7 +29,10 @@ def calc_z (h, zice, theta_s, theta_b, hc, N, zeta=None, Vstretching=4):
     lev = arange(1,N+1)-0.5
     s = (lev-N)*ds
 
-    if Vstretching == 2:
+    if Vstretching == 1:
+        C = (1-theta_b)*sinh(theta_s*s)/sinh(theta_s)
+        C = C + theta_b*(tanh(theta_s*(s+0.5))/(2*tanh(0.5*theta_s)) -0.5)
+    elif Vstretching == 2:
         Csur = (-cosh(theta_s*s) + 1)/(cosh(theta_s) - 1)
         Cbot = sinh(theta_b*(s+1))/sinh(theta_b) - 1
         weight = (s+1)**alpha*(1 + (alpha/beta)*(1 - (s+1)**beta))
@@ -41,11 +46,20 @@ def calc_z (h, zice, theta_s, theta_b, hc, N, zeta=None, Vstretching=4):
     num_lon = size(h, 1)
     num_lat = size(h, 0)
     z = zeros((N, num_lat, num_lon))
-    for k in range(N):
-        z0 = (h*C[k] + hc*s[k])/(h + hc)
-        if zeta is None:
-            z[k,:,:] = h*z0 - abs(zice)
-        else:
-            z[k,:,:] = (zeta+h)*z0 + zeta - abs(zice)
+    if Vtransform==1:
+        for k in range(N):
+            z0 = (h-hc)*C[k] + hc*s[k]
+            if zeta is None:
+                z[k,:,:] = z0 - abs(zice)
+            else:
+                z[k,:,:] = z0 + zeta*(1+z0/h) - abs(zice)
+
+    elif Vtransform==2:
+        for k in range(N):
+            z0 = (h*C[k] + hc*s[k])/(h + hc)
+            if zeta is None:
+                z[k,:,:] = h*z0 - abs(zice)
+            else:
+                z[k,:,:] = (zeta+h)*z0 + zeta - abs(zice)
 
     return z, s, C
